@@ -11,9 +11,7 @@ class ObjectionMismatch(PredicateMismatch):
 
 @view_config(context=ObjectionMismatch, renderer="simplejson")
 def objection_mismatch_view(ex, request):     # pylint: disable=W0613
-    """We change the very restrictive 404 on predicate mismatch to a 403.
-    So the frontend can distinct between real 404 and authentication issues.
-    """
+    """We return a json error response as a 400/Bad Request."""
 
     cnt = {
         'status': "error",
