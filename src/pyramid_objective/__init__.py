@@ -6,7 +6,8 @@ from pyramid.view import view_config
 
 
 class ObjectionMismatch(PredicateMismatch):
-    pass
+
+    """We derive our exception context for specifically view on it."""
 
 
 @view_config(context=ObjectionMismatch, renderer="simplejson")
