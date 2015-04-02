@@ -1,27 +1,51 @@
 import objective
 
-from pyramid.exceptions import PredicateMismatch
+from zope.interface import Interface, implements
+from zope.component import adapts
+
+from pyramid.interfaces import IRequest
 from pyramid.httpexceptions import HTTPBadRequest
-from pyramid.view import view_config
 
 
-class ObjectionMismatch(PredicateMismatch):
+class IObjectionSubject(Interface):     # pylint: disable=E0239
+
+    def get(name, default=None):        # pylint: disable=E0213
+        """:returns: the named item or the default"""
+
+
+class DefaultObjectionSubject(dict):
+
+    """Default adapter to build our objection subject."""
+
+    implements(IObjectionSubject)
+    adapts(IRequest)
+
+    def __init__(self, request):
+        super(DefaultObjectionSubject, self).__init__(
+            match=request.matchdict,
+            params=request.params
+        )
+
+        body = self._find_body(request)
+
+        if body:
+            self['body'] = body
+
+    @staticmethod
+    def _find_body(request):
+        # TODO maybe inspect content-type?
+        try:
+            body = request.json_body
+            return body
+
+        except ValueError:
+            if request.POST:
+                return request.POST
+
+
+class ObjectionMismatch(HTTPBadRequest):
 
     """We derive our exception context for specifically view on it."""
-
-
-@view_config(context=ObjectionMismatch, renderer="simplejson")
-def objection_mismatch_view(ex, request):     # pylint: disable=W0613
-    """We return a json error response as a 400/Bad Request."""
-
-    cnt = {
-        'status': "error",
-        'errors': request.errors
-    }
-
-    return HTTPBadRequest(
-        json_body=cnt,
-    )
 
 
 class Objection(object):
@@ -33,36 +57,15 @@ class Objection(object):
 
     """
 
-    # TODO think about using an IRequest adapter
-    # for resolving what parts of the request object to
-
     def __init__(self, objective_class):
         self._objective = objective_class()
 
-    def _find_body(self, request):
-        # TODO maybe inspect content-type?
-        try:
-            body = request.json_body
-            return body
-
-        except ValueError:
-            if request.POST:
-                return request.POST
-
     def __call__(self, request):
-        request_data = {
-            'match': request.matchdict,
-            'params': request.params
-        }
-
-        body = self._find_body(request)
-
-        if body:
-            request_data['body'] = body
+        subject = request.registry.getAdapter(request, IObjectionSubject)
 
         try:
             request.validated = self._objective.deserialize(
-                request_data,
+                subject,
                 environment={"request": request}
             )
 
@@ -75,9 +78,12 @@ class Objection(object):
 
                 request.errors.add(location, '.'.join(path), message)
 
-            raise ObjectionMismatch(e)
+            cnt = {
+                'status': "error",
+                'errors': request.errors
+            }
 
-        return False
+            raise ObjectionMismatch(json_body=cnt)
 
 
 class ObjectionPredicate(object):
@@ -104,4 +110,5 @@ def includeme(config):
     """Register objection predicate."""
 
     # setup for pyramid
+    config.registry.registerAdapter(DefaultObjectionSubject)
     config.add_view_predicate("objection", ObjectionPredicate)
