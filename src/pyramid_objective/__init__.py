@@ -66,21 +66,24 @@ class Objection(object):
         try:
             request.validated = self._objective.deserialize(
                 subject,
-                environment={"request": request}
+                environment={
+                    "request": request
+                }
             )
 
             return True
 
         except objective.Invalid as e:
-            # assemble request.errors
-            for path, message in e.error_dict().iteritems():
-                location = path[0]
-
-                request.errors.add(location, '.'.join(path), message)
-
             cnt = {
                 'status': "error",
-                'errors': request.errors
+                'errors': [
+                    {
+                        "location": path,
+                        "name": path[-1],
+                        "value": repr(invalid.value),
+                        "message": invalid.message
+                    } for path, invalid in e.error_dict().iteritems()
+                ]
             }
 
             raise ObjectionMismatch(json_body=cnt)
