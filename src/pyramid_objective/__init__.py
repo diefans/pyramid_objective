@@ -1,27 +1,58 @@
-import objective
+import inspect
 
-from zope.interface import Interface, implements
+import objective
+import objective.exc
+
+from zope.interface import Interface, implements, Attribute, classImplements, implementedBy
 from zope.component import adapts
 
-from pyramid.interfaces import IRequest
+from pyramid.interfaces import IRequest, IResponse
 from pyramid.httpexceptions import HTTPBadRequest
 
 
-class IObjectionSubject(Interface):     # pylint: disable=E0239
+class IObjective(Interface):            # pylint: disable=E0239
+
+    def __call__(validator=None, **kwargs):         # pylint: disable=E0213
+        """Instantiation of Objective."""
+
+
+class IObjectiveInvalidValue(Interface):        # pylint: disable=E0239
+    node = Attribute("The node of the error.")
+    value = Attribute("The value that caused the error.")
+    message = Attribute("The message, that describes the error")
+
+
+class IObjectiveInvalidChildren(IObjectiveInvalidValue):
+
+    def error_dict():       # pylint: disable=E0211
+        """:returns: a dict of all errors where key is a path tuple and value is the ``Invalid``"""
+
+
+classImplements(objective.Mapping, IObjective)
+classImplements(objective.exc.InvalidValue, IObjectiveInvalidValue)
+classImplements(objective.exc.InvalidChildren, IObjectiveInvalidChildren)
+
+
+class IObjectiveSubject(Interface):     # pylint: disable=E0239
 
     def get(name, default=None):        # pylint: disable=E0213
         """:returns: the named item or the default"""
 
 
-class DefaultObjectionSubject(dict):
+class IObjectiveErrorResponse(IResponse):
+
+    """Just a marker for error response."""
+
+
+class DefaultObjectiveSubject(dict):
 
     """Default adapter to build our objection subject."""
 
-    implements(IObjectionSubject)
+    implements(IObjectiveSubject)
     adapts(IRequest)
 
     def __init__(self, request):
-        super(DefaultObjectionSubject, self).__init__(
+        super(DefaultObjectiveSubject, self).__init__(
             match=request.matchdict,
             params=request.params
         )
@@ -43,75 +74,84 @@ class DefaultObjectionSubject(dict):
                 return request.POST
 
 
-class ObjectionMismatch(HTTPBadRequest):
+class BadObjective(HTTPBadRequest):
 
     """We derive our exception context for specifically view on it."""
+    implements(IObjectiveErrorResponse)
+    adapts(IObjectiveInvalidChildren)
+
+    def __init__(self, error):
+        cnt = {
+            'status': "error",
+            'errors': [
+                {
+                    "location": path,
+                    "name": path[-1],
+                    "value": repr(invalid.value),
+                    "message": invalid.message
+                } for path, invalid in error.error_dict().iteritems()
+            ]
+        }
+
+        super(BadObjective, self).__init__(json_body=cnt)
 
 
 class Objection(object):
 
-    """An validator for objective.
+    """A request validator for objective."""
 
-    An ``objective.Mapping`` is required,
-    which has to have ``match``, ``params`` and ``body`` items.
+    def _get_objective(self, objective_class, *args, **kwargs):
+        if IObjective in implementedBy(objective_class):
+            _objective = objective_class(*args, **kwargs)
 
-    """
+        else:
+            _objective = objective_class
 
-    def __init__(self, objective_class):
-        self._objective = objective_class()
+        return _objective
 
-    def __call__(self, request):
-        subject = request.registry.getAdapter(request, IObjectionSubject)
+    def validate(self, request, objective_class, *args, **kwargs):
+
+        """Perform request validation.
+
+        There has to be an adapter registered to adapt ``IRequest`` into ``IObjectiveSubject``.
+
+        :param request: the pyramid requst to validate
+        :param objective_class: a IObjective implementer or provider
+        :param args: arguments to instantiate an IObjective implementer
+        :param kwargs: keyword arguments to instantiate an IObjective implementer
+        """
+
+        _objective = self._get_objective(objective_class, *args, **kwargs)
+        subject = request.registry.getAdapter(request, IObjectiveSubject)
 
         try:
-            request.validated = self._objective.deserialize(
+            validated = _objective.deserialize(
                 subject,
                 environment={
                     "request": request
                 }
             )
 
-            return True
+            return validated
 
-        except objective.Invalid as e:
-            cnt = {
-                'status': "error",
-                'errors': [
-                    {
-                        "location": path,
-                        "name": path[-1],
-                        "value": repr(invalid.value),
-                        "message": invalid.message
-                    } for path, invalid in e.error_dict().iteritems()
-                ]
-            }
+        except objective.exc.InvalidChildren as error:
 
-            raise ObjectionMismatch(json_body=cnt)
+            error_response = request.registry.getAdapter(error, IObjectiveErrorResponse)
 
-
-class ObjectionPredicate(object):
-
-    """Just deserialize the request by the provided objective.
-    Adds errors to request.errors.
-    """
-
-    def __init__(self, objective_class, config):    # pylint: disable=W0613
-        self.objective_class = objective_class
-        self.objection = Objection(objective_class)
-
-    def text(self):
-        return 'objective = {}'.format(self.objective_class)
-
-    phash = text
-
-    def __call__(self, context, request):
-
-        return self.objection(request)
+            raise error_response
 
 
 def includeme(config):
     """Register objection predicate."""
 
     # setup for pyramid
-    config.registry.registerAdapter(DefaultObjectionSubject)
-    config.add_view_predicate("objection", ObjectionPredicate)
+    config.registry.registerAdapter(BadObjective, provided=IObjectiveErrorResponse)
+    config.registry.registerAdapter(DefaultObjectiveSubject)
+
+    objection = Objection()
+
+    def request_objective(request, objective_class, *args, **kwargs):
+
+        return objection.validate(request, objective_class, *args, **kwargs)
+
+    config.add_request_method(request_objective, "objective")
