@@ -29,11 +29,6 @@ You will simply get a request method `request.objective` to ensure your request 
     @view_config(route_name="foobar", request_method="POST")
     def view(request):
 
-        # the source structure will look like this
-        {
-            'body':
-
-        }
         validated = request.objective(FooObjective)
 
         assert isinstance(validated.body['foo'], unicode)
