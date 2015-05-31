@@ -6,6 +6,9 @@ from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
 
+__version__ = '0.0.1'
+
+
 class PyTest(TestCommand):
     """Our test runner."""
 
@@ -30,7 +33,19 @@ class PyTest(TestCommand):
 
 setup(
     name="pyramid_objective",
-    version="0.0.1",
+    author="Oliver Berger",
+    author_email="diefans@gmail.com",
+    url="https://github.com/diefans/pyramid_objective",
+    description="declaraive de/serialization of python structures for pyramid",
+    version=__version__,
+    classifiers=[
+        'Development Status :: 4 - Beta',
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: Apache Software License',
+        'Programming Language :: Python',
+    ],
+
+    keywords="objective pyramid deserialization serialization",
 
     package_dir={'': 'src'},
     namespace_packages=[],

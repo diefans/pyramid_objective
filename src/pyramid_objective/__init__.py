@@ -46,7 +46,7 @@ class IObjectiveErrorResponse(IResponse):
 
 class DefaultObjectiveSubject(dict):
 
-    """Default adapter to build our objection subject."""
+    """Default adapter to build our objective subject."""
 
     implements(IObjectiveSubject)
     adapts(IRequest)
