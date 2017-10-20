@@ -1,10 +1,12 @@
 import inspect
 
+import six
+
 import objective
 import objective.exc
 
-from zope.interface import Interface, implements, Attribute, classImplements, implementedBy
-from zope.component import adapts
+from zope.interface import Interface, implementer, Attribute, classImplements, implementedBy
+from zope.component import adapter
 
 from pyramid.interfaces import IRequest, IResponse
 from pyramid.httpexceptions import HTTPBadRequest
@@ -44,12 +46,11 @@ class IObjectiveErrorResponse(IResponse):
     """Just a marker for error response."""
 
 
+@implementer(IObjectiveSubject)
+@adapter(IRequest)
 class DefaultObjectiveSubject(dict):
 
     """Default adapter to build our objective subject."""
-
-    implements(IObjectiveSubject)
-    adapts(IRequest)
 
     def __init__(self, request):
         super(DefaultObjectiveSubject, self).__init__(
@@ -74,11 +75,11 @@ class DefaultObjectiveSubject(dict):
                 return request.POST
 
 
+@implementer(IObjectiveErrorResponse)
+@adapter(IObjectiveInvalidChildren)
 class BadObjective(HTTPBadRequest):
 
     """We derive our exception context for specifically view on it."""
-    implements(IObjectiveErrorResponse)
-    adapts(IObjectiveInvalidChildren)
 
     def __init__(self, error):
         cnt = {
@@ -89,7 +90,7 @@ class BadObjective(HTTPBadRequest):
                     "name": path[-1],
                     "value": repr(invalid.value),
                     "message": invalid.message
-                } for path, invalid in error.error_dict().iteritems()
+                } for path, invalid in six.iteritems(error.error_dict())
             ]
         }
 
